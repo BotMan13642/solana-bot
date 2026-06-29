@@ -15,13 +15,13 @@ HELIUS_API_KEY = "78f177d6-fa97-426a-a963-79098e658927"
 MAX_MARKET_CAP = 500000
 MIN_MARKET_CAP = 10000
 MIN_LIQUIDITY = 15000
-MIN_VOLUME_1H = 5000
+MIN_VOLUME_1H = 3000
 MAX_AGE_MINUTES = 45
 MIN_AGE_MINUTES = 5
 MIN_PRICE_CHANGE = -10
-MIN_TXNS = 50
+MIN_TXNS = 30
 MAX_TOP_HOLDER_PCT = 20      # No wallet over 20%
-REQUIRE_SOCIALS = True       # Must have Twitter or Telegram
+REQUIRE_SOCIALS = False       # Must have Twitter or Telegram
  
 # ============================================
 # SEEN COINS
