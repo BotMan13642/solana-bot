@@ -1,15 +1,19 @@
-import os
-import requests
-import time
-from datetime import datetime, timezone
 
+import os
+import asyncio
+import json
+import time
+import requests
+import websockets
+from datetime import datetime, timezone
+ 
 # ============================================
 # YOUR SETTINGS — pulled from Railway env vars
 # (Settings -> Variables on the Railway service)
 # ============================================
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
-
+ 
 _missing = [name for name, val in [
     ("TELEGRAM_TOKEN", TELEGRAM_TOKEN),
     ("TELEGRAM_CHAT_ID", TELEGRAM_CHAT_ID),
@@ -19,21 +23,23 @@ if _missing:
         f"Missing required environment variable(s): {', '.join(_missing)}. "
         f"Set these in Railway under Settings -> Variables."
     )
-
+ 
 # ============================================
 # SETTINGS
 # ============================================
-MIN_LIQUIDITY = 5000          # Min liquidity to confirm
-MAX_MARKET_CAP = 500000       # Max MC
-SCAN_INTERVAL = 15            # Scan every 15 seconds
-MIN_VOLUME = 2000             # Min 1H volume
-
+PUMPPORTAL_WS = "wss://pumpportal.fun/api/data"
+ 
+# Noise filter for brand-new token creation alerts.
+# PumpFun gets hundreds of new tokens/hour, most are instant rugs.
+# Raise this if you're getting flooded, lower it if you want more (noisier) signal.
+MIN_INITIAL_BUY_SOL = 5.0
+ 
 # ============================================
 # TRACKING
 # ============================================
-seen_coins = set()
-alerted_coins = set()
-
+alerted_new = set()
+alerted_migration = set()
+ 
 def send_telegram(message, important=False):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     payload = {
@@ -49,153 +55,120 @@ def send_telegram(message, important=False):
             requests.post(url, json=payload, timeout=10)
     except Exception as e:
         print(f"Telegram error: {e}")
-
-def get_pumpfun_trending():
-    """Get trending coins from PumpFun"""
-    try:
-        url = "https://api.pumpfun.com/api/v1/coins"
-        params = {
-            "limit": 50,
-            "sort": "trending",
-            "timeframe": "1h"
-        }
-        response = requests.get(url, params=params, timeout=10)
-        if response.status_code == 200:
-            return response.json()
-        return None
-    except Exception as e:
-        print(f"PumpFun API error: {e}")
-        return None
-
-def get_coin_details_dexscreener(address):
-    """Check if coin has migrated and get DEXScreener data"""
-    try:
-        url = f"https://api.dexscreener.com/latest/dex/tokens/{address}"
-        response = requests.get(url, timeout=10)
-        if response.status_code == 200:
-            data = response.json()
-            pairs = data.get("pairs", [])
-            sol_pairs = [p for p in pairs if p.get("chainId") == "solana"]
-            if sol_pairs:
-                return max(sol_pairs, key=lambda x: float(x.get("liquidity", {}).get("usd", 0) or 0))
-        return None
-    except Exception as e:
-        print(f"DEXScreener error: {e}")
-        return None
-
-def format_pumpfun_alert(coin, stage, details=None):
-    """Format PumpFun stage alert"""
-    name = coin.get("name", "Unknown")
-    symbol = coin.get("symbol", "???")
-    address = coin.get("mint", "")
-    
-    if stage == "final_stretch":
-        progress = coin.get("bonding_progress", 0)
-        message = f"""
-🟢 <b>PUMPFUN FINAL STRETCH</b> 🟢
-
+ 
+def format_new_token_alert(data):
+    """Format alert for a brand-new PumpFun token creation"""
+    name = data.get("name", "Unknown")
+    symbol = data.get("symbol", "???")
+    mint = data.get("mint", "")
+    initial_buy = data.get("initialBuy", 0)
+    market_cap_sol = data.get("marketCapSol", 0)
+    sol_in_curve = data.get("vSolInBondingCurve", 0)
+ 
+    message = f"""
+🆕 <b>BRAND NEW PUMPFUN TOKEN</b> 🆕
+ 
 🪙 <b>{name} (${symbol})</b>
-
-📊 Bonding Progress: {progress:.1f}%
-💰 MC: ${coin.get('market_cap', 0):,.0f}
-💧 Liquidity: ${coin.get('liquidity', 0):,.0f}
-
-⏰ About to migrate to Raydium!
-
-📋 <code>{address}</code>
-🔗 <a href="https://pump.fun/coin/{address}">View on PumpFun</a>
-
+ 
+💰 Market Cap: {market_cap_sol:.2f} SOL
+🌊 SOL in Curve: {sol_in_curve:.2f}
+🎯 Initial Buy: {initial_buy:,.0f} tokens
+ 
+⏰ Just created — earliest possible signal!
+ 
+📋 <code>{mint}</code>
+🔗 <a href="https://pump.fun/coin/{mint}">View on PumpFun</a>
+🔗 <a href="https://axiom.trade/t/{mint}">Open in Axiom</a>
+ 
 🎯 Use: <b>PRESET 1 🟢 COLD</b>
 """
-        return message, False
-    
-    elif stage == "migrating":
-        message = f"""
-🟡 <b>MIGRATION IN PROGRESS!</b> 🟡
-
-🪙 <b>{name} (${symbol})</b>
-
-🔄 Just migrated from PumpFun!
+    return message
+ 
+def format_migration_alert(data):
+    """Format alert for a PumpFun -> Raydium migration"""
+    mint = data.get("mint", "")
+ 
+    message = f"""
+🟡 <b>MIGRATED TO RAYDIUM!</b> 🟡
+ 
+🪙 <b>Token Migration</b>
+ 
+🔄 Just graduated from PumpFun bonding curve!
 ⏱ Get in early before volume pumps!
-
-📋 <code>{address}</code>
-🔗 <a href="https://axiom.trade/t/{address}">Open in Axiom</a>
-
+ 
+📋 <code>{mint}</code>
+🔗 <a href="https://axiom.trade/t/{mint}">Open in Axiom</a>
+🔗 <a href="https://dexscreener.com/solana/{mint}">DEXScreener</a>
+ 
 🎯 Use: <b>PRESET 2 🟡 WARM</b>
 """
-        return message, True
-    
-    elif stage == "migrated":
-        mc = float(details.get("fdv", 0) or 0)
-        liquidity = float(details.get("liquidity", {}).get("usd", 0) or 0)
-        volume = float(details.get("volume", {}).get("h1", 0) or 0)
-        
-        message = f"""
-🔴 <b>MIGRATED TO RAYDIUM!</b> 🔴
-
-🪙 <b>{name} (${symbol})</b>
-
-💰 MC: ${mc:,.0f}
-💧 Liquidity: ${liquidity:,.0f}
-📊 1H Volume: ${volume:,.0f}
-
-✅ Real on-chain data confirmed!
-
-📋 <code>{address}</code>
-🔗 <a href="https://axiom.trade/t/{address}">Open in Axiom</a>
-
-🎯 Use: <b>PRESET 2 🟡 WARM</b>
-"""
-        return message, volume > 10000
-
-def run_bot():
-    print("🟢 PumpFun Scanner Bot LIVE!")
-    send_telegram("🟢 <b>PumpFun Scanner Bot LIVE!</b>\n\n📡 Watching PumpFun bonding curves\n🔄 Detecting migrations to Raydium\n🚀 Catching coins EARLY!\n\nLet's find gems! 🎯")
-    
+    return message
+ 
+async def handle_message(raw_message):
+    try:
+        data = json.loads(raw_message)
+    except Exception as e:
+        print(f"Failed to parse message: {e}")
+        return
+ 
+    tx_type = data.get("txType", "")
+    mint = data.get("mint", "")
+ 
+    if not mint:
+        return
+ 
+    # New token creation event
+    if tx_type == "create":
+        if mint in alerted_new:
+            return
+        initial_buy_sol = data.get("solAmount", data.get("vSolInBondingCurve", 0))
+        if initial_buy_sol and float(initial_buy_sol) < MIN_INITIAL_BUY_SOL:
+            print(f"Skipping {data.get('symbol', '???')} - initial buy too small")
+            return
+        alerted_new.add(mint)
+        symbol = data.get("symbol", "???")
+        print(f"🆕 NEW TOKEN: {symbol}")
+        message = format_new_token_alert(data)
+        send_telegram(message)
+ 
+    # Migration event (no txType="create", comes through subscribeMigration)
+    elif "pool" in data or tx_type == "migrate":
+        if mint in alerted_migration:
+            return
+        alerted_migration.add(mint)
+        print(f"🟡 MIGRATED: {mint}")
+        message = format_migration_alert(data)
+        send_telegram(message, important=True)
+ 
+async def run_bot():
+    print("🟢 PumpFun Scanner Bot LIVE! (PumpPortal WebSocket)")
+    send_telegram(
+        "🟢 <b>PumpFun Scanner Bot LIVE!</b>\n\n"
+        "📡 Streaming PumpFun token creation in real time\n"
+        "🔄 Watching for migrations to Raydium\n"
+        "🚀 Earliest possible signal — catching coins at birth!\n\n"
+        "Let's find gems! 🎯"
+    )
+ 
+    reconnect_delay = 5
+ 
     while True:
         try:
-            print(f"Scanning PumpFun... {datetime.now().strftime('%H:%M:%S')}")
-            
-            # Get trending coins from PumpFun
-            data = get_pumpfun_trending()
-            if not data or "coins" not in data:
-                print("No PumpFun data")
-                time.sleep(SCAN_INTERVAL)
-                continue
-            
-            coins = data.get("coins", [])
-            
-            for coin in coins:
-                address = coin.get("mint", "")
-                if not address or address in alerted_coins:
-                    continue
-                
-                if address not in seen_coins:
-                    seen_coins.add(address)
-                    
-                    progress = coin.get("bonding_progress", 0)
-                    
-                    # Stage 1: Final Stretch (80%+ progress)
-                    if progress >= 80:
-                        print(f"🟢 FINAL STRETCH: {coin.get('symbol')} at {progress:.0f}%")
-                        message, _ = format_pumpfun_alert(coin, "final_stretch")
-                        send_telegram(message)
-                        alerted_coins.add(address)
-                    
-                    # Stage 2: Check if migrated
-                    migrated_pair = get_coin_details_dexscreener(address)
-                    if migrated_pair and address not in alerted_coins:
-                        print(f"🟡 MIGRATED: {coin.get('symbol')}")
-                        message, is_hot = format_pumpfun_alert(coin, "migrated", migrated_pair)
-                        send_telegram(message, important=is_hot)
-                        alerted_coins.add(address)
-            
-            print(f"Waiting {SCAN_INTERVAL} seconds...")
-            time.sleep(SCAN_INTERVAL)
-            
+            async with websockets.connect(PUMPPORTAL_WS) as ws:
+                print(f"Connected to PumpPortal... {datetime.now(timezone.utc).strftime('%H:%M:%S')}")
+                reconnect_delay = 5  # reset backoff on successful connect
+ 
+                await ws.send(json.dumps({"method": "subscribeNewToken"}))
+                await ws.send(json.dumps({"method": "subscribeMigration"}))
+ 
+                async for raw_message in ws:
+                    await handle_message(raw_message)
+ 
         except Exception as e:
-            print(f"Bot error: {e}")
-            time.sleep(30)
-
+            print(f"WebSocket error: {e}. Reconnecting in {reconnect_delay}s...")
+            send_telegram(f"⚠️ PumpFun bot disconnected, reconnecting... ({e})")
+            await asyncio.sleep(reconnect_delay)
+            reconnect_delay = min(reconnect_delay * 2, 60)  # exponential backoff, capped at 60s
+ 
 if __name__ == "__main__":
-    run_bot()
+    asyncio.run(run_bot())
