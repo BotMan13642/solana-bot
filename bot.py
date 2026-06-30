@@ -1,14 +1,27 @@
+import os
 import requests
 import time
 from datetime import datetime, timezone
- 
+
 # ============================================
-# YOUR SETTINGS
+# YOUR SETTINGS — pulled from Railway env vars
+# (Settings -> Variables on the Railway service)
 # ============================================
-TELEGRAM_TOKEN = "8701972089:AAG_41PCqfM1xJf9q40o90A0abTIBQk4Fzo"
-TELEGRAM_CHAT_ID = "8420732989"
-HELIUS_API_KEY = "78f177d6-fa97-426a-a963-79098e658927"
- 
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
+HELIUS_API_KEY = os.environ.get("HELIUS_API_KEY")
+
+_missing = [name for name, val in [
+    ("TELEGRAM_TOKEN", TELEGRAM_TOKEN),
+    ("TELEGRAM_CHAT_ID", TELEGRAM_CHAT_ID),
+    ("HELIUS_API_KEY", HELIUS_API_KEY),
+] if not val]
+if _missing:
+    raise RuntimeError(
+        f"Missing required environment variable(s): {', '.join(_missing)}. "
+        f"Set these in Railway under Settings -> Variables."
+    )
+
 # ============================================
 # FILTERS V3 👑
 # ============================================
@@ -21,7 +34,7 @@ MIN_AGE_MINUTES = 5
 MIN_PRICE_CHANGE = -10
 MIN_TXNS = 30
 MAX_TOP_HOLDER_PCT = 20      # No wallet over 20%
-REQUIRE_SOCIALS = False       # Must have Twitter or Telegram
+REQUIRE_SOCIALS = False      # Must have Twitter or Telegram
  
 # ============================================
 # SEEN COINS
