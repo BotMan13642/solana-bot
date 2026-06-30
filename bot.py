@@ -1,8 +1,9 @@
+
 import os
 import requests
 import time
 from datetime import datetime, timezone
-
+ 
 # ============================================
 # YOUR SETTINGS — pulled from Railway env vars
 # (Settings -> Variables on the Railway service)
@@ -10,7 +11,8 @@ from datetime import datetime, timezone
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 HELIUS_API_KEY = os.environ.get("HELIUS_API_KEY")
-
+ 
+# Fail loudly on startup instead of silently breaking mid-run
 _missing = [name for name, val in [
     ("TELEGRAM_TOKEN", TELEGRAM_TOKEN),
     ("TELEGRAM_CHAT_ID", TELEGRAM_CHAT_ID),
@@ -21,7 +23,7 @@ if _missing:
         f"Missing required environment variable(s): {', '.join(_missing)}. "
         f"Set these in Railway under Settings -> Variables."
     )
-
+ 
 # ============================================
 # FILTERS V3 👑
 # ============================================
@@ -319,4 +321,3 @@ def run_bot():
  
 if __name__ == "__main__":
     run_bot()
- 
