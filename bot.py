@@ -29,7 +29,7 @@ if _missing:
 # ============================================
 MAX_MARKET_CAP = 500000
 MIN_MARKET_CAP = 10000
-MIN_LIQUIDITY = 15000
+MIN_LIQUIDITY = 2300
 MIN_VOLUME_1H = 3000
 MAX_AGE_MINUTES = 45
 MIN_AGE_MINUTES = 5
