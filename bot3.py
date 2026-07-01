@@ -33,7 +33,7 @@ HELIUS_RPC_URL = f"https://mainnet.helius-rpc.com/?api-key={HELIUS_API_KEY}"
 
 # Noise filter for the INSTANT creation alert.
 # PumpFun gets hundreds of new tokens/hour, most are instant rugs.
-MIN_INITIAL_BUY_SOL = 5.0
+MIN_INITIAL_BUY_SOL = 8.0
 
 # Two-tier confirmation settings (this is the new part):
 # Every qualifying token alerts instantly (tagged EARLY/unconfirmed) so
