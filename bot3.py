@@ -40,7 +40,7 @@ MIN_INITIAL_BUY_SOL = 8.0
 # you never miss anything. Then, after a short delay, we check real
 # holder count and send a louder CONFIRMED alert only if it's showing
 # real legs. Tune these two numbers once you've seen a few days of data.
-CONFIRMATION_DELAY_SECONDS = 60
+CONFIRMATION_DELAY_SECONDS = 35
 MIN_HOLDERS_CONFIRMED = 25
  
 # ============================================
