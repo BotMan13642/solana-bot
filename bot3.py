@@ -214,6 +214,7 @@ def format_migration_alert(data, liquidity_usd):
 🪙 <b>Token Migration</b>
 
 🔄 Just graduated from PumpFun bonding curve!
+🔒 LP auto-burned by PumpFun protocol (can't be rug-pulled this way)
 💧 Liquidity: ${liquidity_usd:,.0f}{warning}
 ⏱ Get in early before volume pumps!
 
